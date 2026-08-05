@@ -1,0 +1,9 @@
+.venv/
+.yfinance_cache/
+.pytest_cache/
+**/__pycache__/
+*.pyc
+streamlit.server.log
+streamlit.stdout.log
+streamlit.stderr.log
+.streamlit/secrets.toml
