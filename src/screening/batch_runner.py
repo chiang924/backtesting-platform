@@ -8,7 +8,13 @@ import pandas as pd
 from src.analytics.performance import calculate_performance
 from src.backtest.engine import BacktestConfig, BacktestEngine
 from src.data.data_loader import download_history
-from src.strategies import MomentumStrategy, MovingAverageCrossover, RSIMeanReversion
+from src.strategies import (
+    CustomRuleStrategy,
+    MomentumStrategy,
+    MovingAverageCrossover,
+    RegimeAdaptiveBreakout,
+    RSIMeanReversion,
+)
 from src.universe.universe_validator import deduplicate_tickers
 
 logger = logging.getLogger("backtesting_lab.screening")
@@ -24,7 +30,7 @@ class BatchRunConfig:
     start: str
     end: str
     strategy_name: str
-    strategy_params: dict[str, float | int]
+    strategy_params: dict[str, float | int | str]
     backtest_config: BacktestConfig
     risk_free_rate: float = 0.0
     minimum_coverage: float = 0.90
@@ -39,22 +45,47 @@ class BatchRunResult:
     eligible_stocks: int
 
 
-def build_strategy(name: str, params: dict[str, float | int]):
+def build_strategy(name: str, params: dict[str, float | int | str]):
     if name == "Moving Average Crossover":
         return MovingAverageCrossover(int(params["ma_short"]), int(params["ma_long"]))
     if name == "RSI Mean Reversion":
         return RSIMeanReversion(int(params["rsi_period"]), float(params["rsi_oversold"]), float(params["rsi_overbought"]))
     if name == "Momentum":
         return MomentumStrategy(int(params["mom_lookback"]), float(params["mom_entry"]) / 100, float(params["mom_exit"]) / 100)
+    if name == "Regime-Adaptive Breakout":
+        return RegimeAdaptiveBreakout(
+            ema_window=int(params["rab_ema"]),
+            efficiency_window=int(params["rab_efficiency_window"]),
+            efficiency_threshold=float(params["rab_efficiency_threshold"]),
+            breakout_window=int(params["rab_breakout"]),
+            exit_window=int(params["rab_exit"]),
+            rsi_period=int(params["rab_rsi_period"]),
+            rsi_oversold=float(params["rab_rsi_oversold"]),
+            rsi_exit=float(params["rab_rsi_exit"]),
+        )
+    if name == "Custom Rule Strategy":
+        return CustomRuleStrategy(str(params["custom_entry"]), str(params["custom_exit"]))
     raise ValueError(f"Unsupported strategy: {name}")
 
 
-def required_observations(name: str, params: dict[str, float | int]) -> int:
+def required_observations(name: str, params: dict[str, float | int | str]) -> int:
     if name == "Moving Average Crossover":
         return int(params["ma_long"]) + 1
     if name == "RSI Mean Reversion":
         return int(params["rsi_period"]) + 2
-    return int(params["mom_lookback"]) + 2
+    if name == "Momentum":
+        return int(params["mom_lookback"]) + 2
+    if name == "Regime-Adaptive Breakout":
+        return max(
+            int(params["rab_ema"]),
+            int(params["rab_efficiency_window"]) + 1,
+            int(params["rab_breakout"]) + 1,
+            int(params["rab_exit"]) + 1,
+            int(params["rab_rsi_period"]) + 2,
+        )
+    if name == "Custom Rule Strategy":
+        return CustomRuleStrategy(str(params["custom_entry"]), str(params["custom_exit"])).minimum_history
+    raise ValueError(f"Unsupported strategy: {name}")
 
 
 def _expected_sessions(start: str, end: str) -> int:

@@ -4,9 +4,10 @@ import pandas as pd
 import pytest
 
 from src.backtest.engine import BacktestConfig, BacktestEngine
-from src.screening.batch_runner import BatchRunConfig, run_batch
+from src.screening.batch_runner import BatchRunConfig, build_strategy, required_observations, run_batch
 from src.screening.ranking import RANKING_METRICS, rank_results, select_top_bottom
 from src.universe.universe_validator import parse_custom_tickers, validate_universe_csv
+from src.strategies import CustomRuleStrategy, RegimeAdaptiveBreakout
 
 
 def ranking_frame():
@@ -110,3 +111,26 @@ def test_universe_csv_validation():
     assert validate_universe_csv(io.BytesIO(b"Ticker\n aapl \nMSFT\naapl\n")) == ["AAPL", "MSFT"]
     with pytest.raises(ValueError, match="Ticker column"):
         validate_universe_csv(io.BytesIO(b"Symbol\nAAPL\n"))
+
+
+def test_regime_adaptive_strategy_is_available_to_batch_ranking():
+    params = {
+        "rab_ema": 200,
+        "rab_efficiency_window": 20,
+        "rab_efficiency_threshold": .30,
+        "rab_breakout": 55,
+        "rab_exit": 20,
+        "rab_rsi_period": 14,
+        "rab_rsi_oversold": 30.,
+        "rab_rsi_exit": 55.,
+    }
+    strategy = build_strategy("Regime-Adaptive Breakout", params)
+    assert isinstance(strategy, RegimeAdaptiveBreakout)
+    assert required_observations("Regime-Adaptive Breakout", params) == 200
+
+
+def test_custom_rule_strategy_is_available_to_batch_ranking():
+    params = {"custom_entry": "close > sma(20)", "custom_exit": "close < sma(10)"}
+    strategy = build_strategy("Custom Rule Strategy", params)
+    assert isinstance(strategy, CustomRuleStrategy)
+    assert required_observations("Custom Rule Strategy", params) == 21

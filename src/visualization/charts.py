@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 
 def equity_chart(results: dict[str, object]) -> go.Figure:
@@ -23,6 +24,116 @@ def price_signals_chart(data: pd.DataFrame, trades: pd.DataFrame) -> go.Figure:
                                      marker={"color": color, "size": 11, "symbol": symbol},
                                      hovertemplate="%{x|%Y-%m-%d}<br>%{y:.2f}<extra>" + action + "</extra>"))
     fig.update_layout(title="Price and Executed Trades", xaxis_rangeslider_visible=False, yaxis_title="Price", height=500)
+    return fig
+
+
+def adaptive_regime_chart(
+    data: pd.DataFrame,
+    indicators: pd.DataFrame,
+    trades: pd.DataFrame,
+    efficiency_threshold: float,
+) -> go.Figure:
+    """Two-panel diagnostic chart for the regime-adaptive strategy."""
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.07,
+        row_heights=[0.72, 0.28],
+        subplot_titles=("Price, risk filter and channels", "Kaufman Efficiency Ratio"),
+    )
+    custom = indicators[["Regime", "RSI"]].to_numpy()
+    fig.add_trace(
+        go.Scatter(
+            x=data.index,
+            y=data["Close"],
+            mode="lines",
+            name="Close",
+            line={"color": "#e2e8f0", "width": 1.5},
+            customdata=custom,
+            hovertemplate=(
+                "%{x|%Y-%m-%d}<br>Close: %{y:.2f}<br>Regime: %{customdata[0]}"
+                "<br>RSI: %{customdata[1]:.1f}<extra></extra>"
+            ),
+        ),
+        row=1,
+        col=1,
+    )
+    overlays = [
+        ("Long-Term EMA", "#38bdf8", "solid"),
+        ("Breakout High", "#22c55e", "dash"),
+        ("Exit Low", "#f59e0b", "dot"),
+    ]
+    for column, color, dash in overlays:
+        fig.add_trace(
+            go.Scatter(
+                x=indicators.index,
+                y=indicators[column],
+                mode="lines",
+                name=column,
+                line={"color": color, "width": 1.2, "dash": dash},
+            ),
+            row=1,
+            col=1,
+        )
+    if not trades.empty:
+        for action, color, symbol in [
+            ("BUY", "#22c55e", "triangle-up"),
+            ("SELL", "#ef4444", "triangle-down"),
+        ]:
+            subset = trades[trades["Action"] == action]
+            fig.add_trace(
+                go.Scatter(
+                    x=subset["Execution Date"],
+                    y=subset["Execution Price"],
+                    mode="markers",
+                    name=action,
+                    marker={"color": color, "size": 10, "symbol": symbol},
+                    hovertemplate="%{x|%Y-%m-%d}<br>%{y:.2f}<extra>" + action + "</extra>",
+                ),
+                row=1,
+                col=1,
+            )
+    fig.add_trace(
+        go.Scatter(
+            x=indicators.index,
+            y=indicators["Efficiency Ratio"],
+            mode="lines",
+            name="Efficiency Ratio",
+            line={"color": "#a78bfa", "width": 1.5},
+        ),
+        row=2,
+        col=1,
+    )
+    fig.add_hrect(
+        y0=efficiency_threshold,
+        y1=1,
+        fillcolor="#22c55e",
+        opacity=0.08,
+        line_width=0,
+        row=2,
+        col=1,
+        annotation_text="Trend regime",
+        annotation_position="top left",
+    )
+    fig.add_hline(
+        y=efficiency_threshold,
+        line_dash="dash",
+        line_color="#a78bfa",
+        row=2,
+        col=1,
+        annotation_text=f"Threshold {efficiency_threshold:.2f}",
+        annotation_position="bottom right",
+    )
+    fig.update_yaxes(title_text="Price", row=1, col=1)
+    fig.update_yaxes(title_text="Efficiency", range=[0, 1], row=2, col=1)
+    fig.update_xaxes(title_text="Date", row=2, col=1)
+    fig.update_layout(
+        title="Regime-Adaptive Breakout Diagnostics",
+        hovermode="x unified",
+        height=700,
+        xaxis_rangeslider_visible=False,
+    )
     return fig
 
 
